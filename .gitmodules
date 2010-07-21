@@ -1,0 +1,6 @@
+[submodule "vendor/express"]
+	path = vendor/express
+	url = http://github.com/visionmedia/express.git
+[submodule "vendor/node-mongodb-native"]
+	path = vendor/node-mongodb-native
+	url = http://github.com/christkv/node-mongodb-native.git

@@ -16,6 +16,12 @@ server.use(connect.bodyDecoder());
 db.open(function(p_db) {
 	db.createCollection('urls', function(err, collection) {
 		if(err) throw err;
+		collection.ensureIndex([['url', 1]], true, function(err) {
+			if (err) throw err;
+		});
+		collection.ensureIndex([['index', 1]], true, function(err) {
+			if (err) throw err;
+		});
 		server.set('collection', collection);
 	});
 });
@@ -25,17 +31,20 @@ server.get('/test', function(req, res) {
 	res.send('<form action="/" method="post"><input type="text" name="url" /><input type="submit" value="Create" /></form>');
 });
 
-server.get('/:key', function(req, res){
+server.get('/:key', function(req, res) {
 	var key = req.param('key');
 	var index = ShortUrl.getIndex(key);
-	sys.log('Searching for url with index ' + index);
+	sys.log('Searching for url with key ' + key + ', index ' + index);
 	var collection = server.set('collection');
-	collection.findOne({ index: index }, function(err, result) {
+	collection.findOne({index: index}, function(err, result) {
 		if (err) throw err;
 		if (undefined == result) {
 			sys.log('Cound not match ' + key);
 			return;
 		}
+		collection.update({_id: result._id}, {'$inc': {hits: 1}}, {}, function(err) {
+			if (err) throw err;
+		});
 		sys.log('Redirecting to ' + result.url);
 		res.send('', {'Location': result.url}, 301);
 	});
@@ -44,23 +53,30 @@ server.get('/:key', function(req, res){
 server.post('/', function(req, res) {
 	var url = req.param('url');
 	sys.log('Received ' + url);
-	var data = { url: url };
+	var data = {url: url};
 	var collection = server.set('collection');
-	collection.findOne({ url: url }, function(err, result) {
+	collection.findOne({url: url}, function(err, result) {
 		if(err) throw err;
-		if (null != result) {
+		if (typeof result !== "undefined" && null !== result) {
 			sys.log('Result of url search is ' + result);
 			data.index = result.index;
 			sys.log('Creating ShortUrl for ' + data.url + ' at index ' + data.index);
 			return returnResponse(data);
 		}
-		collection.count({}, function(err, count) {
-			sys.log('Result of url counting is ' + count);
+		collection.find({index: {'$exists': true}}, {sort: [[ 'index', 'desc' ]], limit: 1, fields: {index: true}}, function(err, cursor) {
 			if (err) throw err;
-			data.index = count;
-			collection.insert(data);
-			sys.log('Creating ShortUrl for ' + data.url + ' at index ' + data.index);
-			returnResponse(data);
+			cursor.nextObject(function(err, result) {
+				if (err) throw err;
+				if (null !== result) {
+					sys.log('The maximum index for url ' + url + ' is ' + JSON.stringify(result));
+				}
+				data.index = (null == result) ? 0 : result.index + 1;
+				collection.insert(data, function (err) {
+					if (err) sys.log(err.getMessage());
+				});
+				sys.log('Creating ShortUrl for ' + data.url + ' at index ' + data.index);
+				returnResponse(data);
+			});
 		});
 	});
 	function returnResponse(data) {
